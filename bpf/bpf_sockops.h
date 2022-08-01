@@ -13,6 +13,44 @@
 
 #include <bpf/bpf_endian.h>
 
+#undef bpf_printk
+// Avoiding format string array on the stack
+#define bpf_printk(fmt, ...)                            \
+({                                                      \
+        static const char ____fmt[] = fmt;              \
+        bpf_trace_printk(____fmt, sizeof(____fmt),      \
+                         ##__VA_ARGS__);                \
+})
+
+static __inline__ void print_ip4(uint32_t ip) {
+    unsigned char bytes[4];
+    bytes[0] = ip & 0xFF;
+    bytes[1] = (ip >> 8) & 0xFF;
+    bytes[2] = (ip >> 16) & 0xFF;
+    bytes[3] = (ip >> 24) & 0xFF;
+    // eBPF does not support loop before kernel 5.3
+    bpf_printk("%c%d", ' ', bytes[3]);
+    bpf_printk("%c%d", ',', bytes[2]);
+    bpf_printk("%c%d", ',', bytes[1]);
+    bpf_printk("%c%d", ',', bytes[0]);
+
+}
+
+static __inline__ void log(enum sk_action action, uint32_t src_ip, uint32_t dst_ip)
+{
+    if (action == SK_PASS) {
+        char info_fmt[] = "data redirection succeed:";
+        bpf_trace_printk(info_fmt, sizeof(info_fmt));
+    } else {
+        char info_fmt[] = "data redirection failed:";
+        bpf_trace_printk(info_fmt, sizeof(info_fmt));
+    }
+    print_ip4(src_ip);
+    bpf_printk(" ->");
+    print_ip4(dst_ip);
+    bpf_printk("\n");
+}
+
 struct addr_2_tuple {
     uint32_t ip4;
     uint32_t port;
